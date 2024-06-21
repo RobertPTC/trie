@@ -1,16 +1,22 @@
-interface Node {
-  children: { [key: string]: Node };
-  parentNode: null | Node;
+interface Node<T> {
+  children: { [key: string]: Node<T> };
+  parentNode: null | Node<T>;
   capitalizedLetters?: number[];
   letter: string;
   wordEnd: boolean;
-  data: undefined | { [key: string]: any };
+  data: undefined | T;
 }
 
-export default function Trie() {
-  let searchResults: { value: string; data: { [key: string]: any } }[] = [];
+export type Trie<T> = {
+  addWord(word: string, node: T): void;
+  findWords(s: string): {
+    value: string;
+    data: T;
+  }[];
+};
 
-  const rootNode: Node = {
+export default function TrieFactory<T>(): Trie<T> {
+  const rootNode: Node<T> = {
     capitalizedLetters: [],
     children: {},
     data: undefined,
@@ -23,14 +29,14 @@ export default function Trie() {
     return letter.charCodeAt(0) >= 65 && letter.charCodeAt(0) <= 90;
   }
 
-  function _createNewNode(
-    parentNode: Node,
+  function _createNewNode<T>(
+    parentNode: Node<T>,
     letter: string,
     wordEnd: boolean,
-    data?: { [key: string]: any },
+    data?: T,
     capitalizedLetters?: number[]
   ) {
-    const n: Node = {
+    const n: Node<T> = {
       capitalizedLetters,
       children: {},
       data,
@@ -42,8 +48,8 @@ export default function Trie() {
     return n;
   }
 
-  function addWord(word: string, node: { [key: string]: any }) {
-    let c: Node = rootNode;
+  function _addWord(word: string, node: T) {
+    let c: Node<T> = rootNode;
     const letters = word.split("");
     const capitalizedLetters: number[] = [];
     letters.forEach((l, i) => {
@@ -69,35 +75,45 @@ export default function Trie() {
     });
   }
 
-  function findWords(s: string, c: { [key: string]: Node }) {
-    const n = c[s];
-    if (!n || !Object.keys(n.children)) return;
-    if (n.wordEnd) {
-      const letters: string[] = [];
-      let p: Node = n;
-      while (p.parentNode) {
-        letters.unshift(p.letter);
-        p = p.parentNode;
-      }
-      const capitalizedResult = letters.map((l, i) => {
-        if (n.capitalizedLetters && n.capitalizedLetters.includes(i)) {
-          return l.toUpperCase();
+  function _memoizedFindWords(
+    searchResults: {
+      value: string;
+      data: T;
+    }[]
+  ) {
+    return function findWords(s: string, c: { [key: string]: Node<T> }) {
+      const n = c[s];
+      if (!n || !Object.keys(n.children)) return searchResults;
+      if (n.wordEnd) {
+        const letters: string[] = [];
+        let p: Node<T> = n;
+        while (p.parentNode) {
+          letters.unshift(p.letter);
+          p = p.parentNode;
         }
-        return l;
-      });
-      if (n.data) {
-        searchResults.push({ data: n.data, value: capitalizedResult.join("") });
+        const capitalizedResult = letters.map((l, i) => {
+          if (n.capitalizedLetters && n.capitalizedLetters.includes(i)) {
+            return l.toUpperCase();
+          }
+          return l;
+        });
+        if (n.data) {
+          searchResults = [
+            ...searchResults,
+            { data: n.data, value: capitalizedResult.join("") },
+          ];
+        }
       }
-    }
-    for (let child in n.children) {
-      findWords(child, n.children);
-    }
+      for (let child in n.children) {
+        findWords(child, n.children);
+      }
+      return searchResults;
+    };
   }
 
   return {
-    addWord,
+    addWord: _addWord,
     findWords: (s: string) => {
-      searchResults = [];
       let children = rootNode.children;
       const normalized = s.toLowerCase();
       normalized.split("").forEach((l, i) => {
@@ -105,8 +121,10 @@ export default function Trie() {
           children = children[l].children;
         }
       });
-      findWords(normalized[normalized.length - 1], children);
-      return searchResults;
+      return _memoizedFindWords([])(
+        normalized[normalized.length - 1],
+        children
+      );
     },
   };
 }
